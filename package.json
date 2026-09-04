@@ -1,0 +1,117 @@
+{
+  "name": "capture",
+  "version": "1.0.3",
+  "description": "Capture — HTTP/HTTPS/WebSocket 抓包与请求重写工具",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "prestart": "npm run build",
+    "start": "electron .",
+    "build": "tsc && node build.js",
+    "build:only": "tsc",
+    "dev": "concurrently \"npm run build:only -- --watch\" \"wait-on dist/main/index.js && node build.js && electron .\"",
+    "prepack": "npm run build",
+    "pack": "electron-builder --dir",
+    "predist": "npm run build",
+    "predist:win": "npm run build",
+    "predist:linux": "npm run build",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "clean": "rimraf dist release",
+    "clean:all": "rimraf dist release node_modules package-lock.json"
+  },
+  "keywords": [
+    "capture",
+    "proxy",
+    "websocket",
+    "http",
+    "https",
+    "packet-sniffer",
+    "rewrite"
+  ],
+  "author": {
+    "name": "Capture",
+    "email": "dev@capture.app"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/capture/capture",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/uuid": "^9.0.0",
+    "@types/ws": "^8.5.10",
+    "concurrently": "^8.2.2",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "rimraf": "^5.0.5",
+    "sharp": "^0.33.1",
+    "typescript": "^5.3.3",
+    "wait-on": "^7.2.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "eventemitter3": "^5.0.1",
+    "http-mitm-proxy": "^1.1.0",
+    "http-proxy": "^1.18.1",
+    "http-proxy-middleware": "^2.0.6",
+    "https-proxy-agent": "^7.0.2",
+    "uuid": "^9.0.0",
+    "ws": "^8.16.0"
+  },
+  "build": {
+    "appId": "com.capture.app",
+    "productName": "Capture",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "src/renderer",
+        "to": "src/renderer"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "icon": "assets/icon.png",
+      "maintainer": "Capture <dev@capture.app>",
+      "artifactName": "${productName}-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Capture",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    }
+  }
+}

@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capture</title>
+    <style>
+        :root {
+            --bg: #0f1419;
+            --bg-elevated: #161b22;
+            --bg-panel: #1a222d;
+            --bg-hover: #212a36;
+            --border: #2a3441;
+            --text: #e6edf3;
+            --text-muted: #8b9cb3;
+            --accent: #3dd6c6;
+            --accent-dim: rgba(61, 214, 198, 0.12);
+            --success: #3ecf8e;
+            --danger: #f07178;
+            --warn: #e6b450;
+            --info: #59c2ff;
+            --radius: 8px;
+            --font: "Segoe UI", "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+            --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+            font-size: 13px;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(180deg, #1a222d 0%, #161b22 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-shrink: 0;
+            -webkit-app-region: drag;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 120px;
+            -webkit-app-region: no-drag;
+        }
+
+        .logo h1 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            color: var(--text);
+        }
+
+        .logo h1 span {
+            color: var(--accent);
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #5a6a7a;
+        }
+
+        .status-indicator.active {
+            background: var(--success);
+            box-shadow: 0 0 0 3px rgba(62, 207, 142, 0.25);
+        }
+
+        .status-indicator.inactive { background: #5a6a7a; }
+        .status-indicator.error {
+            background: var(--danger);
+            box-shadow: 0 0 0 3px rgba(240, 113, 120, 0.25);
+        }
+
+        .proxy-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: nowrap;
+            justify-content: flex-end;
+            -webkit-app-region: no-drag;
+            position: relative;
+            z-index: 20;
+        }
+
+        .proxy-controls button,
+        .toolbar-more {
+            -webkit-app-region: no-drag;
+            pointer-events: auto;
+            position: relative;
+            z-index: 21;
+            white-space: nowrap;
+        }
+
+        .toolbar-more {
+            position: relative;
+        }
+
+        .toolbar-more > summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 7px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-hover);
+            color: var(--text);
+            font-size: 0.8rem;
+            font-weight: 560;
+            user-select: none;
+        }
+
+        .toolbar-more > summary::-webkit-details-marker { display: none; }
+        .toolbar-more > summary:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .toolbar-menu {
+            position: absolute;
+            right: 0;
+            top: calc(100% + 6px);
+            min-width: 160px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+            padding: 6px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .toolbar-menu button {
+            width: 100%;
+            text-align: left;
+            background: transparent;
+            border: none;
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+
+        .toolbar-menu button:hover {
+            background: var(--accent-dim);
+            color: var(--accent);
+        }
+
+        .port-display {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-family: var(--mono);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        button {
+            padding: 7px 12px;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+        }
+
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        .btn-start { background: var(--accent); color: #06241f; }
+        .btn-start:hover:not(:disabled) { filter: brightness(1.06); }
+        .btn-stop { background: rgba(240, 113, 120, 0.15); color: var(--danger); border-color: rgba(240, 113, 120, 0.35); }
+        .btn-stop:hover:not(:disabled) { background: rgba(240, 113, 120, 0.25); }
+        .btn-clear { background: rgba(89, 194, 255, 0.12); color: var(--info); border-color: rgba(89, 194, 255, 0.3); }
+        .btn-secondary { background: var(--bg-hover); color: var(--text); border-color: var(--border); }
+        .btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+
+        .capture-tips {
+            background: var(--accent-dim);
+            border-bottom: 1px solid rgba(61, 214, 198, 0.25);
+            color: var(--text);
+            padding: 8px 16px;
+            font-size: 0.78rem;
+            line-height: 1.45;
+            flex-shrink: 0;
+        }
+
+        .capture-tips-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .capture-tips-header strong { color: var(--accent); font-weight: 600; }
+
+        .capture-tips.collapsed .capture-tips-body { display: none; }
+
+        .capture-tips-body { margin-top: 6px; }
+        .capture-tips ul { margin: 0 0 6px 16px; padding: 0; color: var(--text-muted); }
+        .capture-tips .chrome-hint {
+            display: block;
+            background: var(--bg);
+            color: var(--info);
+            padding: 6px 8px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-family: var(--mono);
+            overflow-x: auto;
+            white-space: nowrap;
+            border: 1px solid var(--border);
+        }
+
+        .tip-toggle {
+            background: transparent !important;
+            border: 1px solid var(--border) !important;
+            color: var(--text-muted) !important;
+            padding: 2px 8px !important;
+            font-size: 0.72rem !important;
+        }
+
+        .main-content {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 360px;
+            min-width: 280px;
+            max-width: 480px;
+            background: var(--bg-elevated);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 12px 14px 10px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .sidebar-header h2 {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .search-box {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            outline: none;
+        }
+
+        .search-box:focus { border-color: var(--accent); }
+
+        .filter-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .filter-chip {
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.72rem;
+            user-select: none;
+        }
+
+        .filter-chip:hover { color: var(--text); border-color: #3d4b5c; }
+        .filter-chip.active {
+            background: var(--accent-dim);
+            border-color: rgba(61, 214, 198, 0.45);
+            color: var(--accent);
+        }
+
+        .packet-list {
+            list-style: none;
+            overflow-y: auto;
+            flex: 1;
+            padding: 6px;
+        }
+
+        .packet-item {
+            padding: 8px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 2px;
+            border: 1px solid transparent;
+            position: relative;
+        }
+
+        .packet-item:hover { background: var(--bg-hover); }
+        .packet-item.selected {
+            background: var(--accent-dim);
+            border-color: rgba(61, 214, 198, 0.35);
+        }
+
+        .packet-item.error { border-left: 2px solid var(--danger); }
+
+        .packet-curl-btn {
+            position: absolute;
+            right: 8px;
+            top: 8px;
+            display: none;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.65rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            z-index: 2;
+        }
+
+        .packet-item:hover .packet-curl-btn,
+        .packet-item.selected .packet-curl-btn {
+            display: inline-block;
+        }
+
+        .packet-curl-btn:hover {
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .packet-method {
+            font-weight: 650;
+            font-size: 0.72rem;
+            display: inline-block;
+            padding: 1px 5px;
+            border-radius: 3px;
+            margin-right: 6px;
+            min-width: 42px;
+            text-align: center;
+            font-family: var(--mono);
+        }
+
+        .method-GET { color: var(--success); background: rgba(62, 207, 142, 0.1); }
+        .method-POST { color: var(--info); background: rgba(89, 194, 255, 0.1); }
+        .method-PUT { color: var(--warn); background: rgba(230, 180, 80, 0.1); }
+        .method-DELETE { color: var(--danger); background: rgba(240, 113, 120, 0.1); }
+        .method-WS, .method-WSS { color: #c3a6ff; background: rgba(195, 166, 255, 0.12); }
+
+        .packet-url {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-top: 3px;
+        }
+
+        .packet-meta {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 4px;
+            font-size: 0.7rem;
+            color: #6b7c90;
+        }
+
+        .packet-status { font-weight: 600; }
+        .status-success { color: var(--success); }
+        .status-error { color: var(--danger); }
+        .status-pending { color: var(--warn); }
+        .status-websocket { color: #c3a6ff; }
+
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg);
+            min-width: 0;
+        }
+
+        .content-tabs {
+            display: flex;
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border);
+            padding: 0 8px;
+            flex-shrink: 0;
+            overflow-x: auto;
+        }
+
+        .tab {
+            padding: 10px 14px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+
+        .tab:hover { color: var(--text); }
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .tab-content {
+            flex: 1;
+            overflow: auto;
+            padding: 16px 18px;
+        }
+
+        .tab-pane { display: none; }
+        .tab-pane.active { display: block; }
+
+        .panel-section { margin-bottom: 20px; }
+        .panel-section h3 {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 10px;
+        }
+
+        .key-value-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+
+        .key-value-table th,
+        .key-value-table td {
+            text-align: left;
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+
+        .key-name {
+            width: 160px;
+            color: var(--accent);
+            font-family: var(--mono);
+            font-size: 0.75rem;
+        }
+
+        .value-text { color: var(--text); word-break: break-all; }
+
+        .json-viewer {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+            font-family: var(--mono);
+            font-size: 0.75rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.45;
+        }
+
+        .json-key { color: var(--accent); }
+        .json-string { color: #98c379; }
+        .json-number { color: #d19a66; }
+        .json-boolean { color: #c678dd; }
+        .json-null { color: #7f848e; }
+
+        .body-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .body-toolbar h3 {
+            margin: 0;
+            margin-right: auto;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .body-search-wrap {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 2px 6px;
+        }
+
+        .body-search-wrap:focus-within { border-color: var(--accent); }
+
+        .body-search-wrap input {
+            width: 150px;
+            background: transparent;
+            border: none;
+            color: var(--text);
+            padding: 4px 2px;
+            font-size: 0.75rem;
+            outline: none;
+        }
+
+        .body-search-meta {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            min-width: 44px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .body-tool-btn {
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 4px 8px;
+            border-radius: 5px;
+            font-size: 0.72rem;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .body-tool-btn:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .body-search-hit {
+            background: rgba(230, 180, 80, 0.45);
+            color: inherit;
+            border-radius: 2px;
+            padding: 0 1px;
+        }
+
+        .body-search-hit.active {
+            background: rgba(45, 212, 191, 0.55);
+            outline: 1px solid var(--accent);
+        }
+
+        .ctx-menu {
+            position: fixed;
+            z-index: 2000;
+            min-width: 168px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+            padding: 4px;
+            display: none;
+        }
+
+        .ctx-menu.open { display: block; }
+
+        .ctx-menu button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            background: transparent;
+            border: none;
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+
+        .ctx-menu button:hover {
+            background: var(--accent-dim);
+            color: var(--accent);
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 48px 20px;
+            color: var(--text-muted);
+            text-align: center;
+            min-height: 180px;
+        }
+
+        .empty-state-icon { font-size: 2rem; margin-bottom: 10px; opacity: 0.7; }
+        .empty-state-text { font-size: 0.95rem; margin-bottom: 6px; color: var(--text); }
+        .empty-state-hint { font-size: 0.8rem; color: #6b7c90; }
+
+        .ws-messages {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .ws-message {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 10px 12px;
+            background: var(--bg-elevated);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            border-left: 3px solid #4e4e4e;
+        }
+
+        .ws-message.incoming { border-left-color: var(--success); }
+        .ws-message.outgoing { border-left-color: var(--info); }
+        .ws-message.error { border-left-color: var(--danger); }
+
+        .ws-message-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .ws-message-content {
+            font-size: 0.8rem;
+            word-break: break-word;
+            white-space: pre-wrap;
+            max-height: 320px;
+            overflow: auto;
+            background: var(--bg);
+            border-radius: 6px;
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+        }
+
+        .ws-message-content .json-viewer {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            border: none;
+        }
+
+        .ws-message-direction {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.7rem;
+        }
+
+        .direction-incoming { background: rgba(62, 207, 142, 0.12); color: var(--success); }
+        .direction-outgoing { background: rgba(89, 194, 255, 0.12); color: var(--info); }
+        .direction-error { background: rgba(240, 113, 120, 0.12); color: var(--danger); }
+
+        .ws-message-time, .ws-message-type { font-size: 0.72rem; color: #6b7c90; }
+
+        .status-bar {
+            background: var(--bg-elevated);
+            color: var(--text-muted);
+            padding: 6px 16px;
+            font-size: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .status-bar.error-flash #statusText { color: var(--danger); }
+        .status-bar.success-flash #statusText { color: var(--success); }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            /* 避免标题栏 drag 区域穿透挡住弹窗点击 */
+            -webkit-app-region: no-drag;
+        }
+
+        .modal-overlay.modal-nested {
+            z-index: 1100;
+        }
+
+        .modal {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            width: 440px;
+            max-width: 92vw;
+            max-height: 88vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+            -webkit-app-region: no-drag;
+        }
+
+        .modal .modal-body {
+            overflow: auto;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .modal .modal-footer {
+            flex-shrink: 0;
+        }
+
+        .modal-form-error {
+            display: none;
+            margin: 0 16px 12px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: rgba(240, 113, 120, 0.12);
+            border: 1px solid rgba(240, 113, 120, 0.35);
+            color: var(--danger);
+            font-size: 0.78rem;
+        }
+
+        .modal-form-error.visible {
+            display: block;
+        }
+
+        .modal.modal-wide {
+            width: 860px;
+        }
+
+        .rewrite-modal-hint {
+            margin: 0 0 10px;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .rewrite-modal-hint code {
+            font-family: var(--mono);
+            font-size: 0.7rem;
+            color: var(--accent);
+        }
+
+        .modal-header, .modal-footer {
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .modal-footer {
+            border-bottom: none;
+            border-top: 1px solid var(--border);
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .modal-body { padding: 16px; }
+        .modal-close {
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 1.2rem;
+            padding: 0 6px;
+        }
+
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; margin-bottom: 6px; color: var(--text-muted); }
+        .form-group input[type="number"],
+        .form-group input[type="text"],
+        .form-group textarea {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-family: var(--mono);
+            font-size: 0.8rem;
+            resize: vertical;
+        }
+
+        .form-hint {
+            margin-top: 6px;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .checkbox-group {
+            display: flex !important;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .rewrite-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .rewrite-toolbar h3 {
+            margin: 0;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .rewrite-toolbar .rewrite-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .rewrite-toolbar .rewrite-actions button {
+            padding: 5px 10px;
+            font-size: 0.75rem;
+        }
+
+        .rewrite-table-wrap {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            max-height: min(52vh, 420px);
+            overflow-y: auto;
+            background: var(--bg);
+        }
+
+        .rewrite-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+
+        .rewrite-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: var(--bg-panel);
+            color: var(--text-muted);
+            font-weight: 560;
+            font-size: 0.72rem;
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+
+        .rewrite-table tbody tr {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .rewrite-table tbody tr:last-child { border-bottom: none; }
+        .rewrite-table tbody tr:hover { background: var(--bg-hover); }
+        .rewrite-table tbody tr.is-off { opacity: 0.55; }
+
+        .rewrite-table td {
+            padding: 9px 10px;
+            vertical-align: middle;
+            color: var(--text);
+        }
+
+        .rewrite-table .col-on { width: 44px; text-align: center; }
+        .rewrite-table .col-name { width: 22%; max-width: 160px; }
+        .rewrite-table .col-scope { width: 56px; white-space: nowrap; }
+        .rewrite-table .col-ops { width: 88px; white-space: nowrap; text-align: right; }
+
+        .rw-name {
+            font-weight: 600;
+            font-size: 0.8rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .rw-meta {
+            margin-top: 2px;
+            font-size: 0.68rem;
+            color: var(--text-muted);
+        }
+
+        .rw-flow {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .rw-flow-line {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .rw-flow-label {
+            flex-shrink: 0;
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            width: 28px;
+        }
+
+        .rw-flow-code {
+            font-family: var(--mono);
+            font-size: 0.72rem;
+            color: var(--accent);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .rw-flow-code.to { color: var(--text); }
+
+        .rw-pill {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 0.68rem;
+            background: var(--bg-hover);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+
+        .rw-pill.req { color: var(--accent); border-color: rgba(45, 212, 191, 0.35); }
+        .rw-pill.res { color: var(--info); border-color: rgba(89, 194, 255, 0.35); }
+        .rw-pill.both { color: #e6b450; }
+
+        .rw-switch {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 32px;
+            height: 18px;
+            border-radius: 999px;
+            background: #3a4450;
+            border: none;
+            cursor: pointer;
+            position: relative;
+            vertical-align: middle;
+            transition: background 0.15s;
+        }
+
+        .rw-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #c8d0d8;
+            transition: transform 0.15s;
+        }
+
+        .rw-switch:checked { background: var(--accent); }
+        .rw-switch:checked::after {
+            transform: translateX(14px);
+            background: #06241f;
+        }
+
+        .rw-icon-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 4px 6px;
+            font-size: 0.72rem;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .rw-icon-btn:hover {
+            color: var(--accent);
+            background: var(--accent-dim);
+        }
+
+        .rw-icon-btn.danger:hover {
+            color: var(--danger);
+            background: rgba(240, 113, 120, 0.12);
+        }
+
+        .rewrite-empty {
+            padding: 36px 16px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
+        .rewrite-empty strong {
+            display: block;
+            color: var(--text);
+            margin-bottom: 4px;
+            font-size: 0.85rem;
+        }
+
+        .rewrite-form-section {
+            margin-bottom: 14px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .rewrite-form-section:last-of-type {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .rewrite-form-section h4 {
+            margin: 0 0 10px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .rewrite-form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .rewrite-form-row.full-width { grid-template-columns: 1fr; }
+
+        .rewrite-form-label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+        }
+
+        .rewrite-form-input,
+        .rewrite-form-select,
+        .rewrite-form-textarea {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 7px 9px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-family: var(--mono);
+        }
+
+        .rewrite-form-textarea {
+            min-height: 56px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        .rewrite-form-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            padding-top: 18px;
+        }
+
+        .rewrite-hint {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        .rewrite-actions { display: flex; gap: 8px; }
+
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <h1><span>Capture</span></h1>
+            </div>
+            <div class="proxy-controls">
+                <div class="port-display" id="portDisplay">端口: 8080</div>
+                <button type="button" id="startBtn" class="btn-start">启动</button>
+                <button type="button" id="stopBtn" class="btn-stop" disabled>停止</button>
+                <button type="button" id="clearBtn" class="btn-clear">清除</button>
+                <details class="toolbar-more" id="toolbarMore">
+                    <summary>更多</summary>
+                    <div class="toolbar-menu">
+                        <button type="button" id="certBtn">安装证书</button>
+                        <button type="button" id="copyChromeHintBtn">本地命令</button>
+                        <button type="button" id="openLogsBtn">打开日志</button>
+                        <button type="button" id="rewriteBtn">重写规则</button>
+                        <button type="button" id="configBtn">配置</button>
+                    </div>
+                </details>
+            </div>
+        </header>
+
+        <div id="captureTips" class="capture-tips collapsed" style="display: none;"></div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h2>请求列表</h2>
+                    <input type="text" class="search-box" id="searchBox" placeholder="搜索请求...">
+                    <div class="filter-options">
+                        <span class="filter-chip active" data-filter="all">全部</span>
+                        <span class="filter-chip" data-filter="http">HTTP</span>
+                        <span class="filter-chip" data-filter="https">HTTPS</span>
+                        <span class="filter-chip" data-filter="ws">WS</span>
+                        <span class="filter-chip" data-filter="wss">WSS</span>
+                        <span class="filter-chip" data-filter="error">错误</span>
+                    </div>
+                </div>
+                <ul class="packet-list" id="packetList">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📡</div>
+                        <div class="empty-state-text">等待捕获数据包</div>
+                        <div class="empty-state-hint">启动代理后，这里将显示所有网络请求</div>
+                    </div>
+                </ul>
+            </aside>
+
+            <!-- Content Area -->
+            <main class="content-area">
+                <div class="content-tabs">
+                    <div class="tab active" data-tab="overview">概览</div>
+                    <div class="tab" data-tab="headers">请求头</div>
+                    <div class="tab" data-tab="request">请求体</div>
+                    <div class="tab" data-tab="response">响应体</div>
+                    <div class="tab ws-only" data-tab="websocket">WebSocket消息</div>
+                </div>
+
+                <div class="tab-content" id="tabContent">
+                    <div class="tab-pane active" id="overview">
+                        <div class="empty-state" id="emptyOverview">
+                            <div class="empty-state-icon">📋</div>
+                            <div class="empty-state-text">选择一个请求查看详情</div>
+                        </div>
+                        <div id="overviewContent" style="display: none;"></div>
+                    </div>
+                    
+                    <div class="tab-pane" id="headers">
+                        <div class="empty-state" id="emptyHeaders">
+                            <div class="empty-state-icon">🔧</div>
+                            <div class="empty-state-text">选择一个请求查看请求头</div>
+                        </div>
+                        <div id="headersContent" style="display: none;"></div>
+                    </div>
+                    
+                    <div class="tab-pane" id="request">
+                        <div class="empty-state" id="emptyRequest">
+                            <div class="empty-state-icon">📤</div>
+                            <div class="empty-state-text">选择一个请求查看请求体</div>
+                        </div>
+                        <div id="requestContent" style="display: none;"></div>
+                    </div>
+                    
+                    <div class="tab-pane" id="response">
+                        <div class="empty-state" id="emptyResponse">
+                            <div class="empty-state-icon">📥</div>
+                            <div class="empty-state-text">选择一个请求查看响应体</div>
+                        </div>
+                        <div id="responseContent" style="display: none;"></div>
+                    </div>
+                    
+                    <div class="tab-pane" id="websocket">
+                        <div class="empty-state" id="emptyWebSocket">
+                            <div class="empty-state-icon">💬</div>
+                            <div class="empty-state-text">选择WebSocket连接查看消息</div>
+                        </div>
+                        <div id="websocketContent" style="display: none;"></div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Status Bar -->
+        <footer class="status-bar">
+            <div class="status-item">
+                <span id="statusText">代理未启动</span>
+            </div>
+            <div class="status-item">
+                <span id="packetCount">0 个请求</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Config Modal -->
+    <div class="modal-overlay" id="configModal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>代理配置</h2>
+                <button class="modal-close" id="closeConfig">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="configPort">代理端口</label>
+                    <input type="number" id="configPort" value="8080" min="1" max="65535">
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="configEnableHttps" checked>
+                        <span>启用HTTPS代理</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="configEnableLocalhost" checked>
+                        <span>捕获本地请求 (127.0.0.1, localhost)</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="configAutoSystemProxy" checked>
+                        <span>启动时自动设置系统代理（推荐）</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label for="configBypassList">Bypass 列表（不走代理）</label>
+                    <textarea id="configBypassList" rows="4" placeholder="每行一条，或用分号分隔&#10;例如：&#10;*.corp.com&#10;10.*&#10;*.local"></textarea>
+                    <div class="form-hint">写入系统 ProxyOverride；捕获本地时会自动附加 &lt;-loopback&gt;</div>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="configRecordWebSocket" checked>
+                        <span>记录WebSocket消息</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="configRecordRequests" checked>
+                        <span>记录HTTP请求</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label for="configMaxPackets">最大数据包数量</label>
+                    <input type="number" id="configMaxPackets" value="1000" min="100" max="10000">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelConfig">取消</button>
+                <button class="btn-start" id="saveConfig">保存配置</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rewrite Rules Modal (Charles 风格) -->
+    <div class="modal-overlay" id="rewriteModal" style="display: none;">
+        <div class="modal modal-wide">
+            <div class="modal-header">
+                <h2>重写规则</h2>
+                <button class="modal-close" id="closeRewriteModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="rewrite-modal-hint">
+                    ① 用 URL 匹配请求 → ② 对命中请求改写（Header / Query / URL 等）后再转发
+                </p>
+                <div class="rewrite-toolbar">
+                    <h3>规则 <span id="rewriteRuleCount"></span></h3>
+                    <div class="rewrite-actions">
+                        <button type="button" id="addRewriteRuleBtn" class="btn-start">添加</button>
+                        <button type="button" id="exportRewriteRulesBtn" class="btn-secondary">导出</button>
+                        <button type="button" id="importRewriteRulesBtn" class="btn-secondary">导入</button>
+                    </div>
+                </div>
+                <div class="rewrite-table-wrap">
+                    <div id="rewriteRulesList"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="closeRewriteModalBtn">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="ctx-menu" id="packetCtxMenu">
+        <button type="button" data-action="curl">复制为 cURL</button>
+        <button type="button" data-action="copy-url">复制 URL</button>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>
