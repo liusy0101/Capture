@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ProxyConfig, Packet, WebSocketPacket, WebSocketMessage } from '../types';
 import { RewriteManager } from './rewrite-manager';
 import { ensureCertDir, isTransientProxyError, patchMitmCa, patchMitmCaPrototype, sanitizeCertHostname } from './cert-utils';
+import { patchWsSubprotocolFromHeaders } from './ws-patch';
 
 // http-mitm-proxy 没有完整的 TS 类型导出，这里按其 README API 定义所需的最小接口
 interface IProxyMitm {
@@ -70,8 +71,12 @@ export class ProxyServer extends EventEmitter {
       return Promise.resolve();
     }
 
+    // 必须在 require http-mitm-proxy 之前打补丁，否则上游 WS 子协议会校验失败
+    patchWsSubprotocolFromHeaders();
+
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { Proxy } = require('http-mitm-proxy');
+    const mitm = require('http-mitm-proxy');
+    const Proxy = mitm.Proxy || mitm;
     patchMitmCaPrototype();
     const proxy = new Proxy() as IProxyMitm;
     this.proxy = proxy;
@@ -79,9 +84,12 @@ export class ProxyServer extends EventEmitter {
     console.log('MITM CA certificates dir:', this.sslCaDir);
     ensureCertDir(this.sslCaDir);
 
-    // 全局启用 gzip 解压中间件（同时限制 accept-encoding，减少 br 乱码）
+    // 全局启用 gzip 解压中间件（注意：要用类上的 Proxy.gunzip，不是实例属性）
     try {
-      proxy.use(proxy.gunzip);
+      const gunzipMw = (Proxy as any).gunzip || mitm.gunzip;
+      if (gunzipMw) {
+        proxy.use(gunzipMw);
+      }
     } catch (err) {
       console.warn('[proxy] enable gunzip middleware failed:', err);
     }
@@ -338,6 +346,10 @@ export class ProxyServer extends EventEmitter {
 
     // ---------- WebSocket ----------
     proxy.onWebSocketConnection((ctx: any, callback: (err?: Error) => void) => {
+      // 库在调用本 handler 前已写好 proxyToServerWebSocketOptions；此处必须修好再 callback，
+      // 否则上游常返回 400（Unexpected server response: 400），业务 WSS 直接不可用。
+      this.fixUpstreamWebSocketOptions(ctx);
+
       if (!this.isRunning || !this.config.recordWebSocket) {
         return callback();
       }
@@ -348,9 +360,9 @@ export class ProxyServer extends EventEmitter {
       const protocol = isSSL ? 'wss' : 'ws';
       const reqUrl = upgradeReq.url || '';
       // 绝对 URL（经 HTTP 代理的 ws）或相对路径
-      const fullUrl = /^wss?:\/\//i.test(reqUrl)
-        ? reqUrl
-        : `${protocol}://${host}${reqUrl}`;
+      const fullUrl =
+        ctx.proxyToServerWebSocketOptions?.url ||
+        (/^wss?:\/\//i.test(reqUrl) ? reqUrl : `${protocol}://${host}${reqUrl}`);
 
       if (!this.shouldCaptureHost(host)) {
         console.log(`[ws] skip host: ${host}`);
@@ -422,12 +434,17 @@ export class ProxyServer extends EventEmitter {
         wsPacket.state = 'error';
         wsPacket.isError = true;
         wsPacket.errorMessage = err.message;
+        const statusMatch = /Unexpected server response:\s*(\d+)/i.exec(err.message);
+        if (statusMatch) {
+          wsPacket.status = parseInt(statusMatch[1], 10);
+          wsPacket.statusText = 'WebSocket handshake failed';
+        }
         wsPacket.messages.push({
           id: uuidv4(),
           timestamp: Date.now(),
           direction: 'incoming',
           type: 'error',
-          content: err.message,
+          content: this.formatWsHandshakeError(err.message),
           size: err.message.length
         });
         this.emit('websocket', { ...wsPacket, messages: [...wsPacket.messages] });
@@ -439,12 +456,19 @@ export class ProxyServer extends EventEmitter {
       const wsPacket = this.pendingWebSockets.get(ctx);
       if (wsPacket) {
         wsPacket.state = 'disconnected';
-        wsPacket.closeCode = code;
+        const safeCode = typeof code === 'number' && code >= 1000 && code <= 4999 ? code : 1006;
+        wsPacket.closeCode = safeCode;
         wsPacket.closeReason = typeof message === 'string' ? message : (message ? message.toString() : '');
         this.emit('websocket', { ...wsPacket, messages: [...wsPacket.messages] });
         this.pendingWebSockets.delete(ctx);
       }
-      return callback(null, code, message);
+      const safeCode = typeof code === 'number' && code >= 1000 && code <= 4999 ? code : 1006;
+      try {
+        return callback(null, safeCode, message);
+      } catch (err) {
+        console.warn('[ws] close callback:', err);
+        return callback(null, 1006, message);
+      }
     });
 
     return new Promise((resolve, reject) => {
@@ -528,11 +552,121 @@ export class ProxyServer extends EventEmitter {
     return path.join(this.sslCaDir, 'certs', 'ca.pem');
   }
 
+  /**
+   * 修复 http-mitm-proxy 默认的上游 WS 握手：
+   * - 库会丢掉所有 sec-websocket-* 头（含 Protocol），很多业务（如 kdocs）会直接 400
+   * - 默认 perMessageDeflate=true，与部分服务器协商失败也会 400
+   * - 透传 hop-by-hop 头可能干扰 ws 客户端重建 Upgrade
+   */
+  private fixUpstreamWebSocketOptions(ctx: any): void {
+    const opts = ctx?.proxyToServerWebSocketOptions;
+    if (!opts) return;
+
+    const upgradeReq = ctx.clientToProxyWebSocket?.upgradeReq || {};
+    const rawHeaders: Record<string, string | string[] | undefined> = upgradeReq.headers || {};
+
+    // 优先用 CONNECT 目标校正上游 URL（比 Host 更准）
+    const connectTarget = ctx.connectRequest?.url; // e.g. "365.kdocs.cn:443"
+    const pathAndQuery = (() => {
+      const u = upgradeReq.url || '/';
+      if (/^wss?:\/\//i.test(u)) {
+        try {
+          const parsed = new URL(u);
+          return parsed.pathname + parsed.search;
+        } catch {
+          return u;
+        }
+      }
+      return u.startsWith('/') ? u : `/${u}`;
+    })();
+
+    if (connectTarget) {
+      const prefix = ctx.isSSL ? 'wss' : 'ws';
+      opts.url = `${prefix}://${connectTarget}${pathAndQuery}`;
+    } else if (opts.url && /^https?:\/\//i.test(opts.url)) {
+      opts.url = opts.url.replace(/^http/i, 'ws');
+    }
+
+    const hopByHop = new Set([
+      'connection',
+      'upgrade',
+      'keep-alive',
+      'proxy-connection',
+      'proxy-authenticate',
+      'proxy-authorization',
+      'te',
+      'trailers',
+      'transfer-encoding',
+      'content-length',
+      'content-encoding',
+      'accept-encoding'
+    ]);
+
+    const cleaned: Record<string, string> = {};
+    for (const [key, value] of Object.entries(opts.headers || {})) {
+      const lk = key.toLowerCase();
+      if (hopByHop.has(lk)) continue;
+      if (lk.startsWith('sec-websocket')) continue;
+      if (value == null) continue;
+      cleaned[key] = Array.isArray(value) ? value.join(', ') : String(value);
+    }
+
+    // 补回子协议到 Header；ws-patch 会在 new WebSocket(url, options) 时提升为 protocols 参数
+    const proto = rawHeaders['sec-websocket-protocol'];
+    if (proto) {
+      cleaned['Sec-WebSocket-Protocol'] = Array.isArray(proto) ? proto.join(', ') : String(proto);
+    }
+
+    // Host 与上游 URL 对齐
+    try {
+      const upstream = new URL(opts.url);
+      cleaned.Host = upstream.host;
+      opts.servername = upstream.hostname;
+    } catch {
+      /* ignore */
+    }
+
+    opts.headers = cleaned;
+    // 关闭默认压缩扩展，避免部分网关对 Sec-WebSocket-Extensions 直接 400
+    opts.perMessageDeflate = false;
+    opts.handshakeTimeout = opts.handshakeTimeout || 15000;
+    // 不用 keep-alive Agent，避免复用半开连接导致握手异常
+    opts.agent = undefined;
+
+    console.log(
+      `[ws] upstream ${opts.url}` +
+        (cleaned['Sec-WebSocket-Protocol'] ? ` proto=${cleaned['Sec-WebSocket-Protocol']}` : '')
+    );
+  }
+
+  private formatWsHandshakeError(message: string): string {
+    if (/subprotocol but none was requested/i.test(message)) {
+      return (
+        `${message}\n\n` +
+        '上游返回了 Sec-WebSocket-Protocol，但客户端握手未登记子协议。请更新到已修复版本（会把协议头提升为 ws 构造参数）。'
+      );
+    }
+    if (/Unexpected server response:\s*400/i.test(message)) {
+      return (
+        `${message}\n\n` +
+        '上游拒绝了 WebSocket 握手（HTTP 400）。常见原因：缺少 Sec-WebSocket-Protocol、扩展协商失败、Cookie/鉴权头未正确转发。' +
+        '若仍失败，请确认已安装并信任 Capture CA，并关掉可能改写该域名的重写规则。'
+      );
+    }
+    if (/Unexpected server response:\s*(\d+)/i.test(message)) {
+      return `${message}\n\n上游 WebSocket 握手失败，连接未能升级为 101。`;
+    }
+    return message;
+  }
+
   private resolveWsHost(ctx: any, upgradeReq: any): string {
+    // CONNECT 隧道目标优先（host:port）
+    const connectTarget = ctx?.connectRequest?.url;
+    if (connectTarget) return connectTarget;
+
     const headerHost = upgradeReq.headers?.host || '';
     if (headerHost) return headerHost;
 
-    // CONNECT 隧道场景：从 connectRequests / URL 推断
     const url = upgradeReq.url || '';
     if (/^wss?:\/\//i.test(url)) {
       try {
@@ -542,7 +676,6 @@ export class ProxyServer extends EventEmitter {
       }
     }
 
-    // http-mitm-proxy 在 CONNECT 后可能把目标放在 socket 上
     const auth = (upgradeReq as any).headers?.[':authority'];
     if (auth) return auth;
 

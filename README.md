@@ -13,13 +13,14 @@ HTTP/HTTPS/WebSocket 抓包与请求重写工具（原 ws-proxy-sniffer）。
 ## 安装和运行
 
 ```bash
-npm install
-npm run build
-npm run dist:win   # 产出 Capture-Setup-x.y.z.exe / portable
-npm start
+npm install          # 或: make install
+make build           # 编译 + 生成 Windows 安装包 → release/Capture-Setup-x.y.z.exe
+make start           # 本地启动
 ```
 
-产物在 `release/`，无空格文件名，例如 `Capture-Setup-1.0.3.exe`。
+其它常用目标：`make pack`（仅 win-unpacked）、`make linux`、`make clean`、`make help`。
+
+产物在 `release/`，例如 `Capture-Setup-1.0.3.exe`。
 
 
 ### 📊 数据包管理

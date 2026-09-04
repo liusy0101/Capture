@@ -1057,6 +1057,10 @@ class ProxyApp {
         content.className = 'ws-message-content';
         if (message.type === 'binary') {
             content.textContent = `[二进制数据] ${this.formatSize(message.size || 0)}`;
+        } else if (message.type === 'error') {
+            content.style.whiteSpace = 'pre-wrap';
+            content.style.color = 'var(--danger)';
+            content.textContent = String(message.content || '');
         } else {
             content.innerHTML = this.formatMessageContent(message.content);
         }
