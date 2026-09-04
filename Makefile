@@ -1,5 +1,6 @@
 # Capture — 常用构建命令
 #   make build   编译并生成 Windows 安装包（默认）
+#   make mac     生成 macOS 安装包（dmg + zip，arm64）
 #   make linux   生成 Linux 安装包
 #   make pack    仅打包未安装目录（win-unpacked，无需 wine）
 #   make help    查看全部目标
@@ -11,7 +12,7 @@ NPM ?= npm
 VERSION := $(shell node -p "require('./package.json').version" 2>/dev/null || echo 0.0.0)
 RELEASE_DIR := release
 
-.PHONY: help install compile build win linux pack portable clean start asar-update
+.PHONY: help install compile build win mac linux pack portable clean start asar-update
 
 help:
 	@echo "Capture $(VERSION)"
@@ -20,6 +21,7 @@ help:
 	@echo "  make compile     仅编译 TypeScript → dist/"
 	@echo "  make build       编译并生成 Windows 安装包（默认交付物）"
 	@echo "  make win         同 make build（NSIS Setup + portable）"
+	@echo "  make mac         编译并生成 macOS 包（dmg + zip，arm64）"
 	@echo "  make linux       编译并生成 Linux 包（AppImage / deb）"
 	@echo "  make pack        仅生成未打包目录（release/*-unpacked）"
 	@echo "  make portable    仅生成 Windows portable exe"
@@ -29,6 +31,7 @@ help:
 	@echo ""
 	@echo "产物目录: $(RELEASE_DIR)/"
 	@echo "  Windows: Capture-Setup-$(VERSION).exe , Capture-$(VERSION)-portable.exe"
+	@echo "  macOS:   Capture-$(VERSION)-arm64.dmg , Capture-$(VERSION)-arm64.zip"
 	@echo "  Linux:   Capture-$(VERSION).AppImage , Capture-$(VERSION).deb"
 
 install:
@@ -53,6 +56,19 @@ win: compile
 	@ls -lh $(RELEASE_DIR)/Capture-Setup-$(VERSION).exe \
 		$(RELEASE_DIR)/Capture-$(VERSION)-portable.exe \
 		2>/dev/null || ls -lh $(RELEASE_DIR)/*.{exe,AppImage,deb} 2>/dev/null || ls -lh $(RELEASE_DIR)/
+
+mac: compile
+	@echo "==> 打包 macOS (dmg + zip，arm64)…"
+	@if [ "$$(uname -s)" != "Darwin" ]; then \
+		echo "错误: macOS 打包必须在 Mac 本机执行。"; \
+		exit 1; \
+	fi
+	$(NPM) run dist:mac -- --publish never
+	@echo ""
+	@echo "==> 完成。安装包："
+	@ls -lh $(RELEASE_DIR)/Capture-$(VERSION)-arm64.dmg \
+		$(RELEASE_DIR)/Capture-$(VERSION)-arm64.zip \
+		2>/dev/null || ls -lh $(RELEASE_DIR)/*.{dmg,zip} 2>/dev/null || ls -lh $(RELEASE_DIR)/
 
 linux: compile
 	@echo "==> 打包 Linux (AppImage + deb)…"

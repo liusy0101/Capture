@@ -14,9 +14,11 @@
     "predist": "npm run build",
     "predist:win": "npm run build",
     "predist:linux": "npm run build",
+    "predist:mac": "npm run build",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:linux": "electron-builder --linux",
+    "dist:mac": "electron-builder --mac",
     "clean": "rimraf dist release",
     "clean:all": "rimraf dist release node_modules package-lock.json"
   },
@@ -89,6 +91,28 @@
           ]
         }
       ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icon.png",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "dmg": {
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "linux": {

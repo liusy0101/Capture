@@ -319,7 +319,34 @@ ipcMain.handle('proxy:install-ca', async () => {
       };
     }
 
-    // 非 Windows：打开目录让用户手动导入
+    if (process.platform === 'darwin') {
+      try {
+        // Chrome 依赖系统钥匙串的信任锚；仅装登录钥匙串常仍报 ERR_CERT_AUTHORITY_INVALID
+        const systemKeychain = '/Library/Keychains/System.keychain';
+        const quotedCa = caCertPath.replace(/'/g, `'\\''`);
+        const shellCmd =
+          `security add-trusted-cert -d -r trustRoot -k '${systemKeychain}' '${quotedCa}'`;
+        await execFileAsync('osascript', [
+          '-e',
+          `do shell script ${JSON.stringify(shellCmd)} with administrator privileges`
+        ]);
+      } catch (certErr) {
+        await shell.openPath(path.dirname(caCertPath));
+        return {
+          success: false,
+          error: `自动安装失败: ${(certErr as Error).message}。已打开证书目录：请双击 ca.pem，在「系统」钥匙串中将 NodeMITMProxyCA 设为「始终信任」，然后 Cmd+Q 完全退出 Chrome 再打开。`,
+          caCertPath
+        };
+      }
+      return {
+        success: true,
+        message:
+          'CA 已安装到系统钥匙串并设为信任。请 Cmd+Q 完全退出 Chrome 后再打开，否则 HSTS 站点仍会报证书错误。',
+        caCertPath
+      };
+    }
+
+    // 其他平台：打开目录让用户手动导入
     await shell.openPath(path.dirname(caCertPath));
     return {
       success: true,
